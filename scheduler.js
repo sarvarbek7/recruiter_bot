@@ -69,8 +69,8 @@ function startScheduler(bot) {
     }
   }, { timezone: 'Asia/Tashkent' });
 
-  // 18:00 Asia/Tashkent
-  cron.schedule('0 18 * * *', () => {
+  // 19:00 Asia/Tashkent
+  cron.schedule('0 19 * * *', () => {
     console.log('[scheduler] Deleting rejected appointments...');
     try {
       deleteRejectedAppointments();
@@ -80,7 +80,7 @@ function startScheduler(bot) {
     }
   }, { timezone: 'Asia/Tashkent' });
 
-  console.log('Scheduler started (daily report 09:00, cleanup 18:00 UZ time).');
+  console.log('Scheduler started (daily report 09:00, cleanup 19:00 UZ time).');
 }
 
 module.exports = { startScheduler, sendDailyReport };
