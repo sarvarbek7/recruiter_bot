@@ -73,7 +73,7 @@ function buildCalendarKeyboard(year, month, lang = 'en', bookedByDate = {}) {
 
   for (let day = 1; day <= daysInMonth; day++) {
     const dateStr = toISODate(new Date(year, month, day));
-    const isPast = dateStr < tzToday;
+    const isPast = dateStr < tzToday || (dateStr === tzToday && _availableSlots(dateStr).length === 0);
     const isBeyond = dateStr > maxDate;
 
     let btn;

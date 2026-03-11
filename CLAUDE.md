@@ -42,7 +42,7 @@ This is a skeleton project — only configuration files exist. The entry point i
 ## Requirements
 - User starts the bot. Bot responsed welcome messages and choose language in all languages with 3 lang with their flag.
 - After that bot asks user firstName, then lastName, then position name he/she wants apply.
-- Then he/she choose date and hour when come interview. Date calendar (telegram buttons) min date today. Make sure choosen date must be greater than now.
+- Then he/she choose date and hour when come interview. Date calendar (telegram buttons) min date today. Make sure choosen date must be greater than now until BOOKING_DAYS_AHEAD in given times (10:00-12:00 and 14:00-17:00)
 - appointment saved in sqlite base and admins notified.
 - admins can accept or reject appointment. the candidate (owner of appointment) must be notified
 - admins can see appointments
