@@ -94,4 +94,14 @@ function getBookedSlotsForMonth(year, month) {
   return result;
 }
 
-module.exports = { createAppointment, updateStatus, getAppointments, getAppointmentById, isSlotTaken, getBookedHoursForDate, getBookedSlotsForMonth };
+function getAppointmentsByDateAndStatus(date, status) {
+  return db.prepare(
+    `SELECT * FROM appointments WHERE date = ? AND status = ? ORDER BY hour ASC`
+  ).all(date, status);
+}
+
+function deleteRejectedAppointments() {
+  db.prepare(`DELETE FROM appointments WHERE status = 'rejected'`).run();
+}
+
+module.exports = { createAppointment, updateStatus, getAppointments, getAppointmentById, isSlotTaken, getBookedHoursForDate, getBookedSlotsForMonth, getAppointmentsByDateAndStatus, deleteRejectedAppointments };

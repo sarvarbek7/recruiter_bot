@@ -1,7 +1,10 @@
 'use strict';
 
+const { InputFile } = require('grammy');
 const { t } = require('../i18n');
-const { getAppointments, getAppointmentById, updateStatus } = require('../db');
+const { getAppointmentById, updateStatus, getAppointmentsByDateAndStatus } = require('../db');
+const { buildAdminCalendarKeyboard, buildAdminKeyboard } = require('../keyboards');
+const { buildAppointmentsExcel } = require('../excel');
 
 function getAdminIds() {
   return new Set(
@@ -13,30 +16,59 @@ function isAdmin(ctx) {
   return getAdminIds().has(ctx.from?.id);
 }
 
+/** /appointments — show a date-picker calendar */
 async function adminListHandler(ctx) {
   if (!isAdmin(ctx)) {
     await ctx.reply('Not authorized.');
     return;
   }
 
-  const rows = getAppointments();
-  if (!rows.length) {
-    await ctx.reply(t('en', 'appointments_empty'));
+  const now = new Date();
+  await ctx.reply('📅 Select a date to get approved appointments:', {
+    reply_markup: buildAdminCalendarKeyboard(now.getFullYear(), now.getMonth()),
+  });
+}
+
+/** Handles cb:admin_cal_prev, cb:admin_cal_next, cb:admin_cal_day */
+async function adminCalendarCallbackHandler(ctx) {
+  await ctx.answerCallbackQuery();
+
+  if (!isAdmin(ctx)) return;
+
+  const data = ctx.callbackQuery.data;
+  // cb:admin_cal_prev:YEAR:MONTH  or  cb:admin_cal_next:YEAR:MONTH
+  if (data.startsWith('cb:admin_cal_prev:') || data.startsWith('cb:admin_cal_next:')) {
+    const parts = data.split(':');
+    const year = parseInt(parts[3]);
+    const month = parseInt(parts[4]);
+    await ctx.editMessageReplyMarkup(buildAdminCalendarKeyboard(year, month));
     return;
   }
 
-  const lines = rows.map(r =>
-    t('en', 'appointment_row', {
-      id: r.id,
-      name: `${r.first_name} ${r.last_name}`,
-      position: r.position,
-      date: r.date,
-      hour: r.hour,
-      status: r.status,
-    })
-  );
+  // cb:admin_cal_day:YYYY-MM-DD
+  if (data.startsWith('cb:admin_cal_day:')) {
+    const date = data.slice('cb:admin_cal_day:'.length);
+    await sendAppointmentsExcelForDate(ctx, date);
+  }
+}
 
-  await ctx.reply(t('en', 'appointments_header') + lines.join('\n'));
+async function sendAppointmentsExcelForDate(ctx, date) {
+  const rows = getAppointmentsByDateAndStatus(date, 'accepted');
+
+  if (!rows.length) {
+    await ctx.editMessageText(`📅 ${date}\n\nNo approved appointments for this date.`);
+    return;
+  }
+
+  const buffer = await buildAppointmentsExcel(rows, date);
+
+  // Remove the calendar message first
+  await ctx.deleteMessage();
+
+  await ctx.replyWithDocument(
+    new InputFile(Buffer.from(buffer), `appointments_${date}.xlsx`),
+    { caption: `✅ Approved appointments for ${date} (${rows.length} total)` }
+  );
 }
 
 async function adminCallbackHandler(ctx) {
@@ -49,7 +81,6 @@ async function adminCallbackHandler(ctx) {
 
   const data = ctx.callbackQuery.data;
   const parts = data.split(':');
-  // cb:admin_accept:ID or cb:admin_reject:ID
   const action = parts[1]; // 'admin_accept' or 'admin_reject'
   const id = parseInt(parts[2]);
   const status = action === 'admin_accept' ? 'accepted' : 'rejected';
@@ -62,7 +93,6 @@ async function adminCallbackHandler(ctx) {
     return;
   }
 
-  // Edit admin message to remove buttons and append status
   const statusEmoji = status === 'accepted' ? '✅ Accepted' : '❌ Rejected';
   try {
     await ctx.editMessageText(
@@ -70,11 +100,9 @@ async function adminCallbackHandler(ctx) {
       { reply_markup: { inline_keyboard: [] } }
     );
   } catch (e) {
-    // Message may not have changed text — just remove buttons
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
   }
 
-  // Notify the candidate
   const lang = appointment.lang || 'en';
   const msgKey = status === 'accepted' ? 'admin_accepted' : 'admin_rejected';
   try {
@@ -83,7 +111,6 @@ async function adminCallbackHandler(ctx) {
       t(lang, msgKey, { date: appointment.date, hour: appointment.hour })
     );
 
-    // Send office location if accepted
     if (status === 'accepted') {
       const lat = parseFloat(process.env.LOCATION_LATITUDE);
       const lon = parseFloat(process.env.LOCATION_LONGITUDE);
@@ -96,4 +123,4 @@ async function adminCallbackHandler(ctx) {
   }
 }
 
-module.exports = { adminListHandler, adminCallbackHandler };
+module.exports = { adminListHandler, adminCalendarCallbackHandler, adminCallbackHandler };

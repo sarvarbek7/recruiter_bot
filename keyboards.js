@@ -168,6 +168,51 @@ function buildHourKeyboard(selectedDate, lang = 'en', bookedHours = new Set()) {
   return { inline_keyboard: rows };
 }
 
+/**
+ * A free-navigation calendar for admins (no date restrictions).
+ * Uses cb:admin_cal_prev / cb:admin_cal_next / cb:admin_cal_day callbacks.
+ */
+function buildAdminCalendarKeyboard(year, month, lang = 'en') {
+  const monthNames = MONTH_NAMES[lang] || MONTH_NAMES.en;
+  const title = `${monthNames[month]} ${year}`;
+
+  const prevDate = new Date(year, month - 1, 1);
+  const nextDate = new Date(year, month + 1, 1);
+
+  const rows = [];
+
+  rows.push([
+    { text: '◀', callback_data: `cb:admin_cal_prev:${prevDate.getFullYear()}:${prevDate.getMonth()}` },
+    { text: title, callback_data: 'cb:noop' },
+    { text: '▶', callback_data: `cb:admin_cal_next:${nextDate.getFullYear()}:${nextDate.getMonth()}` },
+  ]);
+
+  rows.push(['Mo','Tu','We','Th','Fr','Sa','Su'].map(d => ({ text: d, callback_data: 'cb:noop' })));
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7;
+
+  let week = [];
+  for (let i = 0; i < firstDow; i++) {
+    week.push({ text: ' ', callback_data: 'cb:noop' });
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = toISODate(new Date(year, month, day));
+    week.push({ text: String(day), callback_data: `cb:admin_cal_day:${dateStr}` });
+    if (week.length === 7) {
+      rows.push(week);
+      week = [];
+    }
+  }
+  if (week.length > 0) {
+    while (week.length < 7) week.push({ text: ' ', callback_data: 'cb:noop' });
+    rows.push(week);
+  }
+
+  return { inline_keyboard: rows };
+}
+
 function buildAdminKeyboard(appointmentId) {
   return {
     inline_keyboard: [
@@ -199,4 +244,4 @@ function removeKeyboard() {
   return { remove_keyboard: true };
 }
 
-module.exports = { buildLangKeyboard, buildCalendarKeyboard, buildHourKeyboard, buildAdminKeyboard, buildPhoneKeyboard, removeKeyboard, hasAvailableSlots };
+module.exports = { buildLangKeyboard, buildCalendarKeyboard, buildAdminCalendarKeyboard, buildHourKeyboard, buildAdminKeyboard, buildPhoneKeyboard, removeKeyboard, hasAvailableSlots };
