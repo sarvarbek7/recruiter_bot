@@ -53,21 +53,21 @@ async function adminCalendarCallbackHandler(ctx) {
 }
 
 async function sendAppointmentsExcelForDate(ctx, date) {
-  const rows = getAppointmentsByDateAndStatus(date, 'accepted');
+  const accepted = getAppointmentsByDateAndStatus(date, 'accepted');
+  const rejected = getAppointmentsByDateAndStatus(date, 'rejected');
 
-  if (!rows.length) {
-    await ctx.editMessageText(`📅 ${date}\n\nNo approved appointments for this date.`);
+  if (!accepted.length && !rejected.length) {
+    await ctx.editMessageText(`📅 ${date}\n\nNo appointments for this date.`);
     return;
   }
 
-  const buffer = await buildAppointmentsExcel(rows, date);
+  const buffer = await buildAppointmentsExcel({ accepted, rejected }, date);
 
-  // Remove the calendar message first
   await ctx.deleteMessage();
 
   await ctx.replyWithDocument(
     new InputFile(Buffer.from(buffer), `appointments_${date}.xlsx`),
-    { caption: `✅ Approved appointments for ${date} (${rows.length} total)` }
+    { caption: `📅 Appointments for ${date}\n✅ ${accepted.length} approved  ❌ ${rejected.length} rejected` }
   );
 }
 

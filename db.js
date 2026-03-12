@@ -149,8 +149,14 @@ function getAppointmentsByDateAndStatus(date, status) {
   ).all(date, status);
 }
 
-function deleteRejectedAppointments() {
-  db.prepare(`DELETE FROM appointments WHERE status = 'rejected'`).run();
+function getPendingAppointmentsForDate(date) {
+  return db.prepare(
+    `SELECT * FROM appointments WHERE date = ? AND status = 'pending' ORDER BY hour ASC`
+  ).all(date);
 }
 
-module.exports = { createAppointment, updateStatus, getAppointments, getAppointmentById, isSlotTaken, getBookedHoursForDate, getBookedSlotsForMonth, getAppointmentsByDateAndStatus, deleteRejectedAppointments, saveAdminMessage, getAdminMessages };
+function deletePendingAppointmentsForDate(date) {
+  db.prepare(`DELETE FROM appointments WHERE date = ? AND status = 'pending'`).run(date);
+}
+
+module.exports = { createAppointment, updateStatus, getAppointments, getAppointmentById, isSlotTaken, getBookedHoursForDate, getBookedSlotsForMonth, getAppointmentsByDateAndStatus, getPendingAppointmentsForDate, deletePendingAppointmentsForDate, saveAdminMessage, getAdminMessages };

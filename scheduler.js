@@ -2,7 +2,7 @@
 
 const cron = require('node-cron');
 const { InputFile } = require('grammy');
-const { getAppointmentsByDateAndStatus, deleteRejectedAppointments } = require('./db');
+const { getAppointmentsByDateAndStatus, getPendingAppointmentsForDate, deletePendingAppointmentsForDate } = require('./db');
 const { buildAppointmentsExcel } = require('./excel');
 
 function getAdminIds() {
@@ -22,15 +22,16 @@ function todayUZ() {
  */
 async function sendDailyReport(bot) {
   const date = todayUZ();
-  const rows = getAppointmentsByDateAndStatus(date, 'accepted');
+  const accepted = getAppointmentsByDateAndStatus(date, 'accepted');
+  const rejected = getAppointmentsByDateAndStatus(date, 'rejected');
   const adminIds = getAdminIds();
 
   if (!adminIds.length) return;
 
-  if (!rows.length) {
+  if (!accepted.length && !rejected.length) {
     for (const adminId of adminIds) {
       try {
-        await bot.api.sendMessage(adminId, `📅 Daily report for ${date}\n\nNo approved appointments today.`);
+        await bot.api.sendMessage(adminId, `📅 Daily report for ${date}\n\nNo appointments today.`);
       } catch (e) {
         console.error(`Failed to send daily report to admin ${adminId}:`, e.message);
       }
@@ -38,14 +39,14 @@ async function sendDailyReport(bot) {
     return;
   }
 
-  const buffer = await buildAppointmentsExcel(rows, date);
+  const buffer = await buildAppointmentsExcel({ accepted, rejected }, date);
 
   for (const adminId of adminIds) {
     try {
       await bot.api.sendDocument(
         adminId,
         new InputFile(Buffer.from(buffer), `appointments_${date}.xlsx`),
-        { caption: `📅 Daily report — ${date}\n✅ ${rows.length} approved appointment(s)` }
+        { caption: `📅 Daily report — ${date}\n✅ ${accepted.length} approved  ❌ ${rejected.length} rejected` }
       );
     } catch (e) {
       console.error(`Failed to send daily report to admin ${adminId}:`, e.message);
@@ -54,9 +55,36 @@ async function sendDailyReport(bot) {
 }
 
 /**
+ * Notify admins of expired pending appointments, then delete them.
+ */
+async function cleanupExpiredPending(bot) {
+  const date = todayUZ();
+  const pending = getPendingAppointmentsForDate(date);
+
+  if (!pending.length) return;
+
+  const adminIds = getAdminIds();
+  const lines = pending.map(a =>
+    `• N_${a.id}: ${a.first_name} ${a.last_name} — ${a.position} — ${a.hour}`
+  ).join('\n');
+  const text = `⏰ The following pending appointments for ${date} have expired and will be deleted:\n\n${lines}`;
+
+  for (const adminId of adminIds) {
+    try {
+      await bot.api.sendMessage(adminId, text);
+    } catch (e) {
+      console.error(`Failed to notify admin ${adminId} of expired appointments:`, e.message);
+    }
+  }
+
+  deletePendingAppointmentsForDate(date);
+  console.log(`[scheduler] Deleted ${pending.length} expired pending appointment(s) for ${date}.`);
+}
+
+/**
  * Start scheduled jobs:
  *  - 09:00 UZ (UTC+5) → send daily report to admins
- *  - 18:00 UZ (UTC+5) → delete all rejected appointments
+ *  - 19:00 UZ (UTC+5) → notify admins of expired pending appointments and delete them
  */
 function startScheduler(bot) {
   // 09:00 Asia/Tashkent
@@ -70,13 +98,12 @@ function startScheduler(bot) {
   }, { timezone: 'Asia/Tashkent' });
 
   // 19:00 Asia/Tashkent
-  cron.schedule('0 19 * * *', () => {
-    console.log('[scheduler] Deleting rejected appointments...');
+  cron.schedule('0 19 * * *', async () => {
+    console.log('[scheduler] Cleaning up expired pending appointments...');
     try {
-      deleteRejectedAppointments();
-      console.log('[scheduler] Rejected appointments deleted.');
+      await cleanupExpiredPending(bot);
     } catch (e) {
-      console.error('[scheduler] Delete rejected error:', e.message);
+      console.error('[scheduler] Cleanup error:', e.message);
     }
   }, { timezone: 'Asia/Tashkent' });
 
