@@ -2,7 +2,7 @@
 
 const { t } = require('../i18n');
 const { buildCalendarKeyboard, buildHourKeyboard, removeKeyboard } = require('../keyboards');
-const { createAppointment, isSlotTaken, getBookedSlotsForMonth, saveAdminMessage } = require('../db');
+const { createAppointment, isSlotTaken, getBookedSlotsForMonth, saveAdminMessage, getAdminIds } = require('../db');
 
 /**
  * Handle language selection and hour selection callback queries.
@@ -122,7 +122,7 @@ async function flowTextHandler(ctx) {
 }
 
 async function notifyAdmins(ctx, { id, name, position, date, hour, phone }) {
-  const adminIds = (process.env.ADMIN_IDS || '').split(',').map(s => Number(s.trim())).filter(Boolean);
+  const adminIds = getAdminIds();
   if (!adminIds.length) return;
 
   const { buildAdminKeyboard } = require('../keyboards');

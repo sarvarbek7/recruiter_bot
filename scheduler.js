@@ -2,12 +2,8 @@
 
 const cron = require('node-cron');
 const { InputFile } = require('grammy');
-const { getAppointmentsByDateAndStatus, getPendingAppointmentsForDate, deletePendingAppointmentsForDate } = require('./db');
+const { getAppointmentsByDateAndStatus, getPendingAppointmentsForDate, deletePendingAppointmentsForDate, getAdminIds } = require('./db');
 const { buildAppointmentsExcel } = require('./excel');
-
-function getAdminIds() {
-  return (process.env.ADMIN_IDS || '').split(',').map(s => Number(s.trim())).filter(Boolean);
-}
 
 function todayUZ() {
   const d = new Date(Date.now() + 5 * 60 * 60 * 1000);

@@ -12,6 +12,7 @@ function initialSession() {
     hour: null,
     calendarYear: now.getFullYear(),
     calendarMonth: now.getMonth(),
+    adminStep: null,
   };
 }
 

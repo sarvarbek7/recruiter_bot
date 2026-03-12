@@ -2,18 +2,15 @@
 
 const { InputFile } = require('grammy');
 const { t } = require('../i18n');
-const { getAppointmentById, updateStatus, getAppointmentsByDateAndStatus, getAdminMessages } = require('../db');
+const {
+  getAppointmentById, updateStatus, getAppointmentsByDateAndStatus, getAdminMessages,
+  isAdminId, getAdminIds, addAdmin, removeAdmin,
+} = require('../db');
 const { buildAdminCalendarKeyboard, buildAdminKeyboard } = require('../keyboards');
 const { buildAppointmentsExcel } = require('../excel');
 
-function getAdminIds() {
-  return new Set(
-    (process.env.ADMIN_IDS || '').split(',').map(s => Number(s.trim())).filter(Boolean)
-  );
-}
-
 function isAdmin(ctx) {
-  return getAdminIds().has(ctx.from?.id);
+  return isAdminId(ctx.from?.id);
 }
 
 /** /appointments — show a date-picker calendar */
@@ -22,21 +19,72 @@ async function adminListHandler(ctx) {
     await ctx.reply('Not authorized.');
     return;
   }
-
   const now = new Date();
-  await ctx.reply('📅 Select a date to get approved appointments:', {
+  await ctx.reply('📅 Select a date to get appointments:', {
     reply_markup: buildAdminCalendarKeyboard(now.getFullYear(), now.getMonth()),
   });
+}
+
+/** /add_admin — prompt for a Telegram ID to add */
+async function addAdminHandler(ctx) {
+  if (!isAdmin(ctx)) { await ctx.reply('Not authorized.'); return; }
+  ctx.session.adminStep = 'AWAITING_ADD_ADMIN';
+  await ctx.reply('👤 Send the Telegram ID to add as admin:');
+}
+
+/** /remove_admin — prompt for a Telegram ID to remove */
+async function removeAdminHandler(ctx) {
+  if (!isAdmin(ctx)) { await ctx.reply('Not authorized.'); return; }
+  ctx.session.adminStep = 'AWAITING_REMOVE_ADMIN';
+  await ctx.reply('👤 Send the Telegram ID to remove from admins:');
+}
+
+/** /list_admins — list all admin IDs */
+async function listAdminsHandler(ctx) {
+  if (!isAdmin(ctx)) { await ctx.reply('Not authorized.'); return; }
+  const ids = getAdminIds();
+  if (!ids.length) { await ctx.reply('No admins found.'); return; }
+  await ctx.reply(ids.map(id => `• ${id}`).join('\n'));
+}
+
+/**
+ * Handle pending admin prompts (add/remove).
+ * Returns true if the message was consumed, false to fall through to user flow.
+ */
+async function adminTextHandler(ctx, next) {
+  const adminStep = ctx.session?.adminStep;
+  if (!adminStep) return next();
+
+  const text = ctx.message.text.trim();
+
+  if (adminStep === 'AWAITING_ADD_ADMIN') {
+    ctx.session.adminStep = null;
+    const id = Number(text);
+    if (!id) { await ctx.reply('❌ Invalid ID. Must be a number.'); return; }
+    addAdmin(id, ctx.from.id);
+    await ctx.reply(`✅ Admin ${id} added.`);
+    return;
+  }
+
+  if (adminStep === 'AWAITING_REMOVE_ADMIN') {
+    ctx.session.adminStep = null;
+    const id = Number(text);
+    if (!id) { await ctx.reply('❌ Invalid ID. Must be a number.'); return; }
+    if (id === ctx.from.id) { await ctx.reply('❌ You cannot remove yourself.'); return; }
+    removeAdmin(id);
+    await ctx.reply(`✅ Admin ${id} removed.`);
+    return;
+  }
+
+  return next();
 }
 
 /** Handles cb:admin_cal_prev, cb:admin_cal_next, cb:admin_cal_day */
 async function adminCalendarCallbackHandler(ctx) {
   await ctx.answerCallbackQuery();
-
   if (!isAdmin(ctx)) return;
 
   const data = ctx.callbackQuery.data;
-  // cb:admin_cal_prev:YEAR:MONTH  or  cb:admin_cal_next:YEAR:MONTH
   if (data.startsWith('cb:admin_cal_prev:') || data.startsWith('cb:admin_cal_next:')) {
     const parts = data.split(':');
     const year = parseInt(parts[3]);
@@ -45,7 +93,6 @@ async function adminCalendarCallbackHandler(ctx) {
     return;
   }
 
-  // cb:admin_cal_day:YYYY-MM-DD
   if (data.startsWith('cb:admin_cal_day:')) {
     const date = data.slice('cb:admin_cal_day:'.length);
     await sendAppointmentsExcelForDate(ctx, date);
@@ -62,9 +109,7 @@ async function sendAppointmentsExcelForDate(ctx, date) {
   }
 
   const buffer = await buildAppointmentsExcel({ accepted, rejected }, date);
-
   await ctx.deleteMessage();
-
   await ctx.replyWithDocument(
     new InputFile(Buffer.from(buffer), `appointments_${date}.xlsx`),
     { caption: `📅 Appointments for ${date}\n✅ ${accepted.length} approved  ❌ ${rejected.length} rejected` }
@@ -79,7 +124,7 @@ async function adminCallbackHandler(ctx) {
 
   const data = ctx.callbackQuery.data;
   const parts = data.split(':');
-  const action = parts[1]; // 'admin_accept' or 'admin_reject'
+  const action = parts[1];
   const id = parseInt(parts[2]);
   const status = action === 'admin_accept' ? 'accepted' : 'rejected';
 
@@ -90,7 +135,6 @@ async function adminCallbackHandler(ctx) {
     return;
   }
 
-  // If already decided, alert this admin and stop
   if (appointment.status !== 'pending') {
     const by = appointment.approved_by_username || 'an admin';
     await ctx.answerCallbackQuery({
@@ -110,7 +154,6 @@ async function adminCallbackHandler(ctx) {
   const statusEmoji = status === 'accepted' ? '✅ Accepted' : '❌ Rejected';
   const statusLine = `\n\nStatus: ${statusEmoji}\nBy: ${adminUsername}`;
 
-  // Update the acting admin's message
   try {
     await ctx.editMessageText(
       ctx.callbackQuery.message.text + statusLine,
@@ -120,7 +163,6 @@ async function adminCallbackHandler(ctx) {
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
   }
 
-  // Notify all other admins by replying to their original notification message
   const adminMessages = getAdminMessages(id);
   for (const msg of adminMessages) {
     if (msg.admin_id === adminId) continue;
@@ -136,7 +178,6 @@ async function adminCallbackHandler(ctx) {
     }
   }
 
-  // Notify the candidate
   const lang = appointment.lang || 'en';
   const msgKey = status === 'accepted' ? 'admin_accepted' : 'admin_rejected';
   try {
@@ -144,7 +185,6 @@ async function adminCallbackHandler(ctx) {
       appointment.user_id,
       t(lang, msgKey, { date: appointment.date, hour: appointment.hour })
     );
-
     if (status === 'accepted') {
       const lat = parseFloat(process.env.LOCATION_LATITUDE);
       const lon = parseFloat(process.env.LOCATION_LONGITUDE);
@@ -157,4 +197,7 @@ async function adminCallbackHandler(ctx) {
   }
 }
 
-module.exports = { adminListHandler, adminCalendarCallbackHandler, adminCallbackHandler };
+module.exports = {
+  adminListHandler, adminCalendarCallbackHandler, adminCallbackHandler,
+  addAdminHandler, removeAdminHandler, listAdminsHandler, adminTextHandler,
+};

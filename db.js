@@ -57,6 +57,52 @@ if (db.pragma('foreign_key_list(appointment_admin_messages)').length === 0) {
   db.pragma('foreign_keys = ON');
 }
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS admins (
+    telegram_id INTEGER PRIMARY KEY,
+    created_at  TEXT,
+    created_by  INTEGER
+  )
+`);
+
+// Migrations for admins table
+for (const col of [
+  `ALTER TABLE admins ADD COLUMN created_at TEXT`,
+  `ALTER TABLE admins ADD COLUMN created_by INTEGER`,
+]) {
+  try { db.exec(col); } catch (e) { /* already exists */ }
+}
+
+function nowUZ() {
+  const d = new Date(Date.now() + 5 * 60 * 60 * 1000);
+  return d.toISOString().replace('T', ' ').slice(0, 19);
+}
+
+/** Seed DB from ADMIN_IDS env var — runs once on startup. */
+function syncAdminsFromEnv() {
+  const ids = (process.env.ADMIN_IDS || '').split(',').map(s => Number(s.trim())).filter(Boolean);
+  const stmt = db.prepare(`INSERT OR IGNORE INTO admins (telegram_id, created_at, created_by) VALUES (?, ?, ?)`);
+  const now = nowUZ();
+  for (const id of ids) stmt.run(id, now, null);
+}
+
+function getAdminIds() {
+  return db.prepare(`SELECT telegram_id FROM admins`).all().map(r => r.telegram_id);
+}
+
+function isAdminId(id) {
+  return !!db.prepare(`SELECT 1 FROM admins WHERE telegram_id = ?`).get(id);
+}
+
+function addAdmin(telegramId, createdBy = null) {
+  db.prepare(`INSERT OR IGNORE INTO admins (telegram_id, created_at, created_by) VALUES (?, ?, ?)`)
+    .run(telegramId, nowUZ(), createdBy);
+}
+
+function removeAdmin(telegramId) {
+  db.prepare(`DELETE FROM admins WHERE telegram_id = ?`).run(telegramId);
+}
+
 // Migrations
 for (const col of [
   `ALTER TABLE appointments ADD COLUMN phone TEXT`,
@@ -159,4 +205,4 @@ function deletePendingAppointmentsForDate(date) {
   db.prepare(`DELETE FROM appointments WHERE date = ? AND status = 'pending'`).run(date);
 }
 
-module.exports = { createAppointment, updateStatus, getAppointments, getAppointmentById, isSlotTaken, getBookedHoursForDate, getBookedSlotsForMonth, getAppointmentsByDateAndStatus, getPendingAppointmentsForDate, deletePendingAppointmentsForDate, saveAdminMessage, getAdminMessages };
+module.exports = { createAppointment, updateStatus, getAppointments, getAppointmentById, isSlotTaken, getBookedHoursForDate, getBookedSlotsForMonth, getAppointmentsByDateAndStatus, getPendingAppointmentsForDate, deletePendingAppointmentsForDate, saveAdminMessage, getAdminMessages, syncAdminsFromEnv, getAdminIds, isAdminId, addAdmin, removeAdmin };
