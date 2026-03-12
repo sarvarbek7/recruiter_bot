@@ -2,7 +2,7 @@
 
 const { InputFile } = require('grammy');
 const { t } = require('../i18n');
-const { getAppointmentById, updateStatus, getAppointmentsByDateAndStatus } = require('../db');
+const { getAppointmentById, updateStatus, getAppointmentsByDateAndStatus, getAdminMessages } = require('../db');
 const { buildAdminCalendarKeyboard, buildAdminKeyboard } = require('../keyboards');
 const { buildAppointmentsExcel } = require('../excel');
 
@@ -72,8 +72,6 @@ async function sendAppointmentsExcelForDate(ctx, date) {
 }
 
 async function adminCallbackHandler(ctx) {
-  await ctx.answerCallbackQuery();
-
   if (!isAdmin(ctx)) {
     await ctx.answerCallbackQuery({ text: 'Not authorized.', show_alert: true });
     return;
@@ -85,24 +83,60 @@ async function adminCallbackHandler(ctx) {
   const id = parseInt(parts[2]);
   const status = action === 'admin_accept' ? 'accepted' : 'rejected';
 
-  updateStatus(id, status);
-
   const appointment = getAppointmentById(id);
   if (!appointment) {
+    await ctx.answerCallbackQuery();
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
     return;
   }
 
+  // If already decided, alert this admin and stop
+  if (appointment.status !== 'pending') {
+    const by = appointment.approved_by_username || 'an admin';
+    await ctx.answerCallbackQuery({
+      text: `Appointment N_${id} already ${appointment.status} by ${by}`,
+      show_alert: true,
+    });
+    return;
+  }
+
+  await ctx.answerCallbackQuery();
+
+  const adminUsername = ctx.from.username ? `@${ctx.from.username}` : `#${ctx.from.id}`;
+  const adminId = ctx.from.id;
+
+  updateStatus(id, status, adminUsername, adminId);
+
   const statusEmoji = status === 'accepted' ? '✅ Accepted' : '❌ Rejected';
+  const statusLine = `\n\nStatus: ${statusEmoji}\nBy: ${adminUsername}`;
+
+  // Update the acting admin's message
   try {
     await ctx.editMessageText(
-      ctx.callbackQuery.message.text + `\n\nStatus: ${statusEmoji}`,
+      ctx.callbackQuery.message.text + statusLine,
       { reply_markup: { inline_keyboard: [] } }
     );
   } catch (e) {
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
   }
 
+  // Notify all other admins by replying to their original notification message
+  const adminMessages = getAdminMessages(id);
+  for (const msg of adminMessages) {
+    if (msg.admin_id === adminId) continue;
+    try {
+      await ctx.api.sendMessage(
+        msg.chat_id,
+        `ℹ️ Appointment N_${id} was ${status} by ${adminUsername}`,
+        { reply_to_message_id: msg.message_id }
+      );
+      await ctx.api.editMessageReplyMarkup(msg.chat_id, msg.message_id, { inline_keyboard: [] });
+    } catch (e) {
+      console.error(`Failed to notify admin ${msg.admin_id}:`, e.message);
+    }
+  }
+
+  // Notify the candidate
   const lang = appointment.lang || 'en';
   const msgKey = status === 'accepted' ? 'admin_accepted' : 'admin_rejected';
   try {

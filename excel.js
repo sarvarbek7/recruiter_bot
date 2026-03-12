@@ -20,21 +20,23 @@ async function buildAppointmentsExcel(appointments, date) {
     { header: 'Date',       key: 'date',        width: 12 },
     { header: 'Time',       key: 'hour',        width: 8  },
     { header: 'Phone',      key: 'phone',       width: 16 },
-    { header: 'Username',   key: 'username',    width: 16 },
+    { header: 'Username',        key: 'username',              width: 16 },
+    { header: 'Approved By',     key: 'approved_by_username',  width: 18 },
   ];
 
   sheet.getRow(1).font = { bold: true };
 
   for (const row of appointments) {
     sheet.addRow({
-      id:         row.id,
-      first_name: row.first_name,
-      last_name:  row.last_name,
-      position:   row.position,
-      date:       row.date,
-      hour:       row.hour,
-      phone:      row.phone || '—',
-      username:   row.username ? `${row.username}` : '—',
+      id:                   row.id,
+      first_name:           row.first_name,
+      last_name:            row.last_name,
+      position:             row.position,
+      date:                 row.date,
+      hour:                 row.hour,
+      phone:                row.phone || '—',
+      username:             row.username || '—',
+      approved_by_username: row.approved_by_username || '—',
     });
   }
 

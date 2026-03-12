@@ -5,7 +5,7 @@ require('dotenv').config();
 const { Bot, session } = require('grammy');
 const { initialSession } = require('./session');
 const { startHandler } = require('./handlers/start');
-const { flowCallbackHandler, flowTextHandler, flowContactHandler } = require('./handlers/flow');
+const { flowCallbackHandler, flowTextHandler } = require('./handlers/flow');
 const { calendarCallbackHandler } = require('./handlers/calendar');
 const { adminListHandler, adminCalendarCallbackHandler, adminCallbackHandler } = require('./handlers/admin');
 const { startScheduler } = require('./scheduler');
@@ -37,8 +37,6 @@ bot.callbackQuery('cb:noop', ctx => ctx.answerCallbackQuery());
 
 // Text messages (conversation flow)
 bot.on('message:text', flowTextHandler);
-// Contact sharing (phone number step)
-bot.on('message:contact', flowContactHandler);
 
 // Global error handler
 bot.catch(err => {

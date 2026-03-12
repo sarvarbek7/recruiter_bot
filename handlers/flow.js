@@ -1,8 +1,8 @@
 'use strict';
 
 const { t } = require('../i18n');
-const { buildCalendarKeyboard, buildHourKeyboard, buildPhoneKeyboard, removeKeyboard } = require('../keyboards');
-const { createAppointment, isSlotTaken, getBookedSlotsForMonth } = require('../db');
+const { buildCalendarKeyboard, buildHourKeyboard, removeKeyboard } = require('../keyboards');
+const { createAppointment, isSlotTaken, getBookedSlotsForMonth, saveAdminMessage } = require('../db');
 
 /**
  * Handle language selection and hour selection callback queries.
@@ -27,10 +27,8 @@ async function flowCallbackHandler(ctx) {
     ctx.session.step = 'STEP_PHONE';
 
     const lang = ctx.session.lang;
-    // Remove the inline keyboard from the hour message
     await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
-    // Send a new message with the reply keyboard for phone sharing
-    await ctx.reply(t(lang, 'ask_phone'), { reply_markup: buildPhoneKeyboard(lang) });
+    await ctx.reply(t(lang, 'ask_phone'), { reply_markup: removeKeyboard() });
     return;
   }
 }
@@ -72,8 +70,49 @@ async function flowTextHandler(ctx) {
     return;
   }
 
-  if (step === 'STEP_DATE' || step === 'STEP_HOUR' || step === 'STEP_PHONE') {
-    // Ignore plain text while waiting for inline button selections or contact share
+  if (step === 'STEP_DATE' || step === 'STEP_HOUR') {
+    // Ignore plain text while waiting for inline button selections
+    return;
+  }
+
+  if (step === 'STEP_PHONE') {
+    const phone = ctx.message.text.trim();
+    const { date, hour, firstName, lastName, position } = ctx.session;
+
+    if (isSlotTaken(date, hour)) {
+      ctx.session.step = 'STEP_DATE';
+      ctx.session.date = null;
+      ctx.session.hour = null;
+      const { calendarYear, calendarMonth } = ctx.session;
+      const bookedByDate = getBookedSlotsForMonth(calendarYear, calendarMonth);
+      await ctx.reply(
+        t(lang, 'slot_taken', { date, hour }),
+        { reply_markup: buildCalendarKeyboard(calendarYear, calendarMonth, lang, bookedByDate) }
+      );
+      return;
+    }
+
+    const appointmentId = createAppointment({
+      user_id: ctx.from.id,
+      username: ctx.from.username ? `@${ctx.from.username}` : 'N/A',
+      first_name: firstName,
+      last_name: lastName,
+      position,
+      date,
+      hour,
+      phone,
+      lang,
+    });
+
+    ctx.session.step = 'STEP_DONE';
+
+    const name = `${firstName} ${lastName}`;
+    await ctx.reply(
+      t(lang, 'appointment_confirmed', { name, position, date, hour }),
+      { reply_markup: removeKeyboard() }
+    );
+
+    await notifyAdmins(ctx, { id: appointmentId, name, position, date, hour, phone });
     return;
   }
 
@@ -92,61 +131,14 @@ async function notifyAdmins(ctx, { id, name, position, date, hour, phone }) {
 
   for (const adminId of adminIds) {
     try {
-      await ctx.api.sendMessage(adminId, text, {
+      const msg = await ctx.api.sendMessage(adminId, text, {
         reply_markup: buildAdminKeyboard(id),
       });
+      saveAdminMessage(id, adminId, msg.chat.id, msg.message_id);
     } catch (e) {
       console.error(`Failed to notify admin ${adminId}:`, e.message);
     }
   }
 }
 
-/**
- * Handle contact sharing (phone number step).
- */
-async function flowContactHandler(ctx) {
-  const { step, lang, firstName, lastName, position, date, hour } = ctx.session;
-
-  if (step !== 'STEP_PHONE') return;
-
-  const phone = ctx.message.contact.phone_number;
-
-  // Check if the slot was taken while the user was filling in their details
-  if (isSlotTaken(date, hour)) {
-    ctx.session.step = 'STEP_DATE';
-    ctx.session.date = null;
-    ctx.session.hour = null;
-    const { calendarYear, calendarMonth } = ctx.session;
-    const bookedByDate = getBookedSlotsForMonth(calendarYear, calendarMonth);
-    await ctx.reply(
-      t(lang, 'slot_taken', { date, hour }),
-      { reply_markup: buildCalendarKeyboard(calendarYear, calendarMonth, lang, bookedByDate) }
-    );
-    return;
-  }
-
-  const appointmentId = createAppointment({
-    user_id: ctx.from.id,
-    username: ctx.from.username ? `@${ctx.from.username}` : 'N/A',
-    first_name: firstName,
-    last_name: lastName,
-    position,
-    date,
-    hour,
-    phone,
-    lang,
-  });
-
-  ctx.session.step = 'STEP_DONE';
-
-  const name = `${firstName} ${lastName}`;
-  await ctx.reply(
-    t(lang, 'appointment_confirmed', { name, position, date, hour }),
-    { reply_markup: removeKeyboard() }
-  );
-
-  // Notify admins
-  await notifyAdmins(ctx, { id: appointmentId, name, position, date, hour, phone });
-}
-
-module.exports = { flowCallbackHandler, flowTextHandler, flowContactHandler };
+module.exports = { flowCallbackHandler, flowTextHandler };

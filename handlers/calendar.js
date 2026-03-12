@@ -73,4 +73,4 @@ async function calendarCallbackHandler(ctx) {
   }
 }
 
-module.exports = { calendarCallbackHandler };
+module.exports = { calendarCallbackHandler};

@@ -6,6 +6,8 @@ const path = require('path');
 const dbPath = process.env.SQLITE_DB_PATH || './recruiter_bot.db';
 const db = new Database(path.resolve(dbPath));
 
+db.pragma('foreign_keys = ON');
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS appointments (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,11 +25,45 @@ db.exec(`
   )
 `);
 
-// Migrate: add phone column if it doesn't exist yet
-try {
-  db.exec(`ALTER TABLE appointments ADD COLUMN phone TEXT`);
-} catch (e) {
-  // Column already exists — ignore
+db.exec(`
+  CREATE TABLE IF NOT EXISTS appointment_admin_messages (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    appointment_id INTEGER NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+    admin_id       INTEGER NOT NULL,
+    chat_id        INTEGER NOT NULL,
+    message_id     INTEGER NOT NULL,
+    UNIQUE(appointment_id, admin_id)
+  )
+`);
+
+// Migrate appointment_admin_messages to add FK if the table was created without it
+if (db.pragma('foreign_key_list(appointment_admin_messages)').length === 0) {
+  db.pragma('foreign_keys = OFF');
+  db.exec(`
+    BEGIN TRANSACTION;
+    CREATE TABLE appointment_admin_messages_new (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      appointment_id INTEGER NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+      admin_id       INTEGER NOT NULL,
+      chat_id        INTEGER NOT NULL,
+      message_id     INTEGER NOT NULL,
+      UNIQUE(appointment_id, admin_id)
+    );
+    INSERT INTO appointment_admin_messages_new SELECT * FROM appointment_admin_messages;
+    DROP TABLE appointment_admin_messages;
+    ALTER TABLE appointment_admin_messages_new RENAME TO appointment_admin_messages;
+    COMMIT;
+  `);
+  db.pragma('foreign_keys = ON');
+}
+
+// Migrations
+for (const col of [
+  `ALTER TABLE appointments ADD COLUMN phone TEXT`,
+  `ALTER TABLE appointments ADD COLUMN approved_by_username TEXT`,
+  `ALTER TABLE appointments ADD COLUMN approved_by_telegram_id INTEGER`,
+]) {
+  try { db.exec(col); } catch (e) { /* already exists */ }
 }
 
 const stmtCreate = db.prepare(`
@@ -36,7 +72,7 @@ const stmtCreate = db.prepare(`
 `);
 
 const stmtUpdateStatus = db.prepare(`
-  UPDATE appointments SET status = ? WHERE id = ?
+  UPDATE appointments SET status = ?, approved_by_username = ?, approved_by_telegram_id = ? WHERE id = ?
 `);
 
 const stmtGetAll = db.prepare(`
@@ -56,8 +92,21 @@ function createAppointment(data) {
   return result.lastInsertRowid;
 }
 
-function updateStatus(id, status) {
-  stmtUpdateStatus.run(status, id);
+function updateStatus(id, status, approvedByUsername = null, approvedByTelegramId = null) {
+  stmtUpdateStatus.run(status, approvedByUsername, approvedByTelegramId, id);
+}
+
+function saveAdminMessage(appointmentId, adminId, chatId, messageId) {
+  db.prepare(`
+    INSERT OR IGNORE INTO appointment_admin_messages (appointment_id, admin_id, chat_id, message_id)
+    VALUES (?, ?, ?, ?)
+  `).run(appointmentId, adminId, chatId, messageId);
+}
+
+function getAdminMessages(appointmentId) {
+  return db.prepare(
+    `SELECT * FROM appointment_admin_messages WHERE appointment_id = ?`
+  ).all(appointmentId);
 }
 
 function getAppointments() {
@@ -104,4 +153,4 @@ function deleteRejectedAppointments() {
   db.prepare(`DELETE FROM appointments WHERE status = 'rejected'`).run();
 }
 
-module.exports = { createAppointment, updateStatus, getAppointments, getAppointmentById, isSlotTaken, getBookedHoursForDate, getBookedSlotsForMonth, getAppointmentsByDateAndStatus, deleteRejectedAppointments };
+module.exports = { createAppointment, updateStatus, getAppointments, getAppointmentById, isSlotTaken, getBookedHoursForDate, getBookedSlotsForMonth, getAppointmentsByDateAndStatus, deleteRejectedAppointments, saveAdminMessage, getAdminMessages };

@@ -140,8 +140,11 @@ function nowMinutesUZ() {
 
 // Available slots: 10:00–12:00 and 14:00–17:00, every 30 minutes
 const SLOTS = [];
+
+const slotDuration = parseInt(process.env.SLOT_DURATION_MINUTES) || 15;
+
 for (const [start, end] of [[10 * 60, 12 * 60], [14 * 60, 17 * 60]]) {
-  for (let m = start; m <= end; m += 30) {
+  for (let m = start; m <= end; m += slotDuration) {
     SLOTS.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
   }
 }
