@@ -138,12 +138,22 @@ function nowMinutesUZ() {
   return d.getUTCHours() * 60 + d.getUTCMinutes();
 }
 
-// Available slots: 10:00–12:00 and 14:00–17:00, every 30 minutes
-const SLOTS = [];
+// Parse WORKING_HOURS env var, e.g. "10:00-12:00,14:00-17:30"
+function parseWorkingHours() {
+  const raw = process.env.WORKING_HOURS || '10:00-12:00,14:00-17:00';
+  return raw.split(',').map(range => {
+    const [start, end] = range.trim().split('-').map(part => {
+      const [h, m] = part.trim().split(':').map(Number);
+      return h * 60 + m;
+    });
+    return [start, end];
+  });
+}
 
 const slotDuration = parseInt(process.env.SLOT_DURATION_MINUTES) || 15;
 
-for (const [start, end] of [[10 * 60, 12 * 60], [14 * 60, 17 * 60]]) {
+const SLOTS = [];
+for (const [start, end] of parseWorkingHours()) {
   for (let m = start; m <= end; m += slotDuration) {
     SLOTS.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
   }
