@@ -161,7 +161,7 @@ function buildHourKeyboard(selectedDate, lang = 'en', bookedHours = new Set()) {
   const rows = [];
   for (let i = 0; i < slots.length; i += 2) {
     const makeBtn = slot => bookedHours.has(slot)
-      ? { text: `✗ ${slot}`, callback_data: 'cb:noop' }
+      ? { text: `🚫 ${slot}`, callback_data: 'cb:noop' }
       : { text: slot, callback_data: `cb:hour:${slot}` };
     const row = [makeBtn(slots[i])];
     if (slots[i + 1]) row.push(makeBtn(slots[i + 1]));
