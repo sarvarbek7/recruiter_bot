@@ -4,47 +4,126 @@ const { InputFile } = require('grammy');
 const { t } = require('../i18n');
 const {
   getAppointmentById, updateStatus, getAppointmentsByDateAndStatus, getAdminMessages,
+  getPendingAppointments, saveAdminMessage,
   isAdminId, getAdminIds, addAdmin, removeAdmin,
 } = require('../db');
-const { buildAdminCalendarKeyboard, buildAdminKeyboard } = require('../keyboards');
+const { buildAdminCalendarKeyboard, buildAdminKeyboard, buildAdminMenuKeyboard } = require('../keyboards');
 const { buildAppointmentsExcel } = require('../excel');
 
 function isAdmin(ctx) {
   return isAdminId(ctx.from?.id);
 }
 
-/** /appointments — show a date-picker calendar */
-async function adminListHandler(ctx) {
-  if (!isAdmin(ctx)) {
-    await ctx.reply('Not authorized.');
-    return;
-  }
+// --- Shared actions (used by both slash commands and the admin menu buttons) ---
+
+async function showAppointmentsCalendar(ctx) {
   const now = new Date();
   await ctx.reply('📅 Select a date to get appointments:', {
     reply_markup: buildAdminCalendarKeyboard(now.getFullYear(), now.getMonth()),
   });
 }
 
+async function promptAddAdmin(ctx) {
+  ctx.session.adminStep = 'AWAITING_ADD_ADMIN';
+  await ctx.reply('👤 Send the Telegram ID to add as admin:');
+}
+
+async function promptRemoveAdmin(ctx) {
+  ctx.session.adminStep = 'AWAITING_REMOVE_ADMIN';
+  await ctx.reply('👤 Send the Telegram ID to remove from admins:');
+}
+
+async function showAdminList(ctx) {
+  const ids = getAdminIds();
+  if (!ids.length) { await ctx.reply('No admins found.'); return; }
+  await ctx.reply(ids.map(id => `• ${id}`).join('\n'));
+}
+
+/**
+ * Send every pending appointment to the requesting admin, each with an
+ * Accept/Reject keyboard — same format as the live notification in handlers/flow.js.
+ */
+async function sendPendingAppointments(ctx) {
+  const pending = getPendingAppointments();
+  if (!pending.length) {
+    await ctx.reply('✅ No pending appointments.');
+    return;
+  }
+
+  const adminId = ctx.from.id;
+  for (const a of pending) {
+    const name = `${a.first_name} ${a.last_name}`;
+    const text = t('en', 'admin_notify', {
+      id: a.id,
+      name,
+      position: a.position,
+      date: a.date,
+      hour: a.hour,
+      phone: a.phone || 'N/A',
+      user_id: a.user_id,
+      username: a.username || 'N/A',
+    });
+    try {
+      const msg = await ctx.reply(text, { reply_markup: buildAdminKeyboard(a.id) });
+      saveAdminMessage(a.id, adminId, msg.chat.id, msg.message_id);
+    } catch (e) {
+      console.error(`Failed to send pending appointment ${a.id}:`, e.message);
+    }
+  }
+}
+
+/** /admin — show the admin control panel with buttons */
+async function adminMenuHandler(ctx) {
+  if (!isAdmin(ctx)) { await ctx.reply('Not authorized.'); return; }
+  await ctx.reply('🛠 Admin panel:', { reply_markup: buildAdminMenuKeyboard() });
+}
+
+/** Handles cb:admin_menu:* button presses */
+async function adminMenuCallbackHandler(ctx) {
+  if (!isAdmin(ctx)) {
+    await ctx.answerCallbackQuery({ text: 'Not authorized.', show_alert: true });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+
+  const action = ctx.callbackQuery.data.split(':')[2];
+  switch (action) {
+    case 'appointments': return showAppointmentsCalendar(ctx);
+    case 'pending': return sendPendingAppointments(ctx);
+    case 'add': return promptAddAdmin(ctx);
+    case 'remove': return promptRemoveAdmin(ctx);
+    case 'list': return showAdminList(ctx);
+  }
+}
+
+/** /appointments — show a date-picker calendar */
+async function adminListHandler(ctx) {
+  if (!isAdmin(ctx)) { await ctx.reply('Not authorized.'); return; }
+  await showAppointmentsCalendar(ctx);
+}
+
+/** /pending — list all pending appointments with Accept/Reject buttons */
+async function pendingAppointmentsHandler(ctx) {
+  if (!isAdmin(ctx)) { await ctx.reply('Not authorized.'); return; }
+  await sendPendingAppointments(ctx);
+}
+
 /** /add_admin — prompt for a Telegram ID to add */
 async function addAdminHandler(ctx) {
   if (!isAdmin(ctx)) { await ctx.reply('Not authorized.'); return; }
-  ctx.session.adminStep = 'AWAITING_ADD_ADMIN';
-  await ctx.reply('👤 Send the Telegram ID to add as admin:');
+  await promptAddAdmin(ctx);
 }
 
 /** /remove_admin — prompt for a Telegram ID to remove */
 async function removeAdminHandler(ctx) {
   if (!isAdmin(ctx)) { await ctx.reply('Not authorized.'); return; }
-  ctx.session.adminStep = 'AWAITING_REMOVE_ADMIN';
-  await ctx.reply('👤 Send the Telegram ID to remove from admins:');
+  await promptRemoveAdmin(ctx);
 }
 
 /** /list_admins — list all admin IDs */
 async function listAdminsHandler(ctx) {
   if (!isAdmin(ctx)) { await ctx.reply('Not authorized.'); return; }
-  const ids = getAdminIds();
-  if (!ids.length) { await ctx.reply('No admins found.'); return; }
-  await ctx.reply(ids.map(id => `• ${id}`).join('\n'));
+  await showAdminList(ctx);
 }
 
 /**
@@ -200,4 +279,5 @@ async function adminCallbackHandler(ctx) {
 module.exports = {
   adminListHandler, adminCalendarCallbackHandler, adminCallbackHandler,
   addAdminHandler, removeAdminHandler, listAdminsHandler, adminTextHandler,
+  adminMenuHandler, adminMenuCallbackHandler, pendingAppointmentsHandler,
 };

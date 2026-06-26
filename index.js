@@ -11,6 +11,7 @@ const { calendarCallbackHandler } = require('./handlers/calendar');
 const {
   adminListHandler, adminCalendarCallbackHandler, adminCallbackHandler,
   addAdminHandler, removeAdminHandler, listAdminsHandler, adminTextHandler,
+  adminMenuHandler, adminMenuCallbackHandler, pendingAppointmentsHandler,
 } = require('./handlers/admin');
 const { startScheduler } = require('./scheduler');
 
@@ -30,7 +31,9 @@ bot.use(session({ initial: initialSession }));
 
 // Commands
 bot.command('start', startHandler);
+bot.command('admin', adminMenuHandler);
 bot.command('appointments', adminListHandler);
+bot.command('pending', pendingAppointmentsHandler);
 bot.command('add_admin', addAdminHandler);
 bot.command('remove_admin', removeAdminHandler);
 bot.command('list_admins', listAdminsHandler);
@@ -40,6 +43,7 @@ bot.callbackQuery(/^cb:lang:/, flowCallbackHandler);
 bot.callbackQuery(/^cb:cal_/, calendarCallbackHandler);
 bot.callbackQuery('cb:hour_back', calendarCallbackHandler);
 bot.callbackQuery(/^cb:hour:/, flowCallbackHandler);
+bot.callbackQuery(/^cb:admin_menu:/, adminMenuCallbackHandler);
 bot.callbackQuery(/^cb:admin_cal_/, adminCalendarCallbackHandler);
 bot.callbackQuery(/^cb:admin_accept:/, adminCallbackHandler);
 bot.callbackQuery(/^cb:admin_reject:/, adminCallbackHandler);

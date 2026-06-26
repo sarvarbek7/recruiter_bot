@@ -195,6 +195,12 @@ function getAppointmentsByDateAndStatus(date, status) {
   ).all(date, status);
 }
 
+function getPendingAppointments() {
+  return db.prepare(
+    `SELECT * FROM appointments WHERE status = 'pending' ORDER BY date ASC, hour ASC`
+  ).all();
+}
+
 function getPendingAppointmentsForDate(date) {
   return db.prepare(
     `SELECT * FROM appointments WHERE date = ? AND status = 'pending' ORDER BY hour ASC`
@@ -205,4 +211,4 @@ function deletePendingAppointmentsForDate(date) {
   db.prepare(`DELETE FROM appointments WHERE date = ? AND status = 'pending'`).run(date);
 }
 
-module.exports = { createAppointment, updateStatus, getAppointments, getAppointmentById, isSlotTaken, getBookedHoursForDate, getBookedSlotsForMonth, getAppointmentsByDateAndStatus, getPendingAppointmentsForDate, deletePendingAppointmentsForDate, saveAdminMessage, getAdminMessages, syncAdminsFromEnv, getAdminIds, isAdminId, addAdmin, removeAdmin };
+module.exports = { createAppointment, updateStatus, getAppointments, getAppointmentById, isSlotTaken, getBookedHoursForDate, getBookedSlotsForMonth, getAppointmentsByDateAndStatus, getPendingAppointments, getPendingAppointmentsForDate, deletePendingAppointmentsForDate, saveAdminMessage, getAdminMessages, syncAdminsFromEnv, getAdminIds, isAdminId, addAdmin, removeAdmin };

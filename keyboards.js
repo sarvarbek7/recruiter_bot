@@ -226,6 +226,21 @@ function buildAdminCalendarKeyboard(year, month, lang = 'en') {
   return { inline_keyboard: rows };
 }
 
+/** The admin control panel — inline buttons mirroring the admin commands. */
+function buildAdminMenuKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: '📅 Appointments', callback_data: 'cb:admin_menu:appointments' }],
+      [{ text: '⏳ Pending appointments', callback_data: 'cb:admin_menu:pending' }],
+      [
+        { text: '➕ Add admin', callback_data: 'cb:admin_menu:add' },
+        { text: '➖ Remove admin', callback_data: 'cb:admin_menu:remove' },
+      ],
+      [{ text: '📋 List admins', callback_data: 'cb:admin_menu:list' }],
+    ],
+  };
+}
+
 function buildAdminKeyboard(appointmentId) {
   return {
     inline_keyboard: [
@@ -257,4 +272,4 @@ function removeKeyboard() {
   return { remove_keyboard: true };
 }
 
-module.exports = { buildLangKeyboard, buildCalendarKeyboard, buildAdminCalendarKeyboard, buildHourKeyboard, buildAdminKeyboard, buildPhoneKeyboard, removeKeyboard, hasAvailableSlots };
+module.exports = { buildLangKeyboard, buildCalendarKeyboard, buildAdminCalendarKeyboard, buildHourKeyboard, buildAdminMenuKeyboard, buildAdminKeyboard, buildPhoneKeyboard, removeKeyboard, hasAvailableSlots };
